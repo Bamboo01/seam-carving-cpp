@@ -121,8 +121,7 @@ void Carver::resize_to(int width, int height)
     seams_carving(target_width, target_height);
 
     const auto finished = std::chrono::steady_clock::now();
-    last_elapsed_ms_ =
-        std::chrono::duration<double, std::milli>(finished - started).count();
+    last_elapsed_ms_ = std::chrono::duration<double, std::milli>(finished - started).count();
 }
 
 void Carver::seams_removal(int count)
@@ -140,6 +139,44 @@ void Carver::seams_removal(int count)
         {
             delete_seam_on_mask(mask_, seam);
         }
+    }
+}
+
+void Carver::seams_carving(int target_width, int target_height)
+{
+    const int delta_rows = target_height - source_.height;
+    const int delta_cols = target_width - source_.width;
+
+    if (delta_cols < 0)
+    {
+        seams_removal(-delta_cols);
+    }
+    else if (delta_cols > 0)
+    {
+        seams_insertion(delta_cols);
+    }
+
+    // rows are carved by rotating the problem onto its side and reusing the same column machinery.
+    if (delta_rows < 0)
+    {
+        image_ = rotate_ccw(image_);
+
+        if (mask_kind_ == MaskKind::Protect)
+            mask_ = rotate_ccw(mask_);
+
+        seams_removal(-delta_rows);
+        image_ = rotate_cw(image_);
+    }
+
+    else if (delta_rows > 0)
+    {
+        image_ = rotate_ccw(image_);
+
+        if (mask_kind_ == MaskKind::Protect)
+            mask_ = rotate_ccw(mask_);
+
+        seams_insertion(delta_rows);
+        image_ = rotate_cw(image_);
     }
 }
 

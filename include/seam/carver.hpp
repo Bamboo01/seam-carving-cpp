@@ -71,6 +71,9 @@ private:
     double last_elapsed_ms_ = 0.0;
 
     void seams_removal(int count);
+    void seams_carving(int target_width, int target_height);
+    void seams_insertion(int count);
+    void carve_object();
     ImageF weighted_energy() const;
     bool mask_has_pixels() const;
     std::pair<int, int> object_bounds() const
