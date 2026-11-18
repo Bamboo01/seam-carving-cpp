@@ -39,4 +39,13 @@ namespace seam
     void save_jpg(const Image& image, const std::string& path, int quality = 90);
     void save_image(const Image& image, const std::string& path);
 
+    // The original python ref keeps everything in float64
+    struct ImageF
+    {
+        int width = 0;
+        int height = 0;
+        int channels = 3;
+        std::vector<double> data;
+    };
+
 }
