@@ -2,9 +2,9 @@ build/
 out/
 .vs/
 .vscode/
+.idea/
 *.user
 *.obj
 *.pdb
 *.ilk
 *.exe
-./idea
