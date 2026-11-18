@@ -84,5 +84,11 @@ namespace seam
     // convert images from stbi to float64 with the same channel order
     ImageF to_float(const Image& image);
 
+    // convert back to images with rgba ints
+    Image to_bytes(const ImageF& image);
+
+    // to bytes but single channel
+    ImageF to_float_gray(const Image& image);
+
 
 }

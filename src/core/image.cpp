@@ -156,4 +156,29 @@ namespace seam
         }
         return out;
     }
+
+    Image to_bytes(const ImageF& image)
+    {
+        Image out;
+        out.width = image.width;
+        out.height = image.height;
+        out.channels = image.channels;
+        out.pixels.resize(image.data.size());
+        
+        for (std::size_t i = 0; i < image.data.size(); ++i)
+        {
+            const double clamped = std::clamp(image.data[i], 0.0, 255.0);
+            out.pixels[i] = static_cast<std::uint8_t>(clamped);
+        }
+        return out;
+    }
+
+    ImageF to_float_gray(const Image& image)
+    {
+        if (image.channels != 1)
+        {
+            throw std::invalid_argument("to_float_gray: expected a single-channel image");
+        }
+        return to_float(image);
+    }
 } // namespace seam
