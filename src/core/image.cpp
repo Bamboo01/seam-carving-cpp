@@ -142,4 +142,18 @@ namespace seam
         }
     }
 
+    ImageF to_float(const Image& image)
+    {
+        ImageF out;
+        out.width = image.width;
+        out.height = image.height;
+        out.channels = image.channels;
+        out.data.resize(image.pixels.size());
+
+        for (std::size_t i = 0; i < image.pixels.size(); ++i)
+        {
+            out.data[i] = static_cast<double>(image.pixels[i]);
+        }
+        return out;
+    }
 } // namespace seam

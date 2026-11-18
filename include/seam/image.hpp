@@ -46,6 +46,43 @@ namespace seam
         int height = 0;
         int channels = 3;
         std::vector<double> data;
+
+        bool empty() const
+        {
+            return data.empty();
+        }
+
+        std::size_t index(int x, int y, int c = 0) const
+        {
+            return (static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
+                    static_cast<std::size_t>(x)) *
+                       static_cast<std::size_t>(channels) +
+                   static_cast<std::size_t>(c);
+        }
+
+        double& at(int x, int y, int c = 0)
+        {
+            return data[index(x, y, c)];
+        }
+
+        const double& at(int x, int y, int c = 0) const
+        {
+            return data[index(x, y, c)];
+        }
+
+        void allocate(int w, int h, int ch)
+        {
+            width = w;
+            height = h;
+            channels = ch;
+            data.assign(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) *
+                            static_cast<std::size_t>(ch),
+                        0.0);
+        }
     };
+
+    // convert images from stbi to float64 with the same channel order
+    ImageF to_float(const Image& image);
+
 
 }
