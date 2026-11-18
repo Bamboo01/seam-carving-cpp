@@ -1,55 +1,64 @@
-// Stub entry point: proves the image I/O path works end to end.
-// The carving pipeline lands in src/core/ next.
+// Sandbox for the image layer: load, convert, write something, look at it.
+// Run from the project root so "assets/sample.jpg" and "out/" resolve.
 
 #include "seam/image.hpp"
 
 #include <cstdio>
 #include <exception>
+#include <filesystem>
 #include <string>
 
 namespace
 {
-    void print_usage(const char* argv0)
+    // Dump any working image to disk so it can be eyeballed. One line per stage.
+    void write_png(const seam::ImageF& image, const std::string& path)
     {
-        std::printf("usage: %s [input-image] [output-image]\n"
-                    "\n"
-                    "  input-image    defaults to assets/sample.jpg\n"
-                    "  output-image   optional; writes a round-tripped copy\n"
-                    "\n"
-                    "Stub build: loads the image and reports it. No carving yet.\n",
-                    argv0);
+        seam::save_png(seam::to_bytes(image), path);
+        std::printf("  wrote %-28s %d x %d\n", path.c_str(), image.width, image.height);
+    }
+
+    void write_png(const seam::Image& image, const std::string& path)
+    {
+        seam::save_png(image, path);
+        std::printf("  wrote %-28s %d x %d\n", path.c_str(), image.width, image.height);
     }
 } // namespace
 
 int main(int argc, char** argv)
 {
-    if (argc > 1 && (std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help"))
-    {
-        print_usage(argv[0]);
-        return 0;
-    }
-
     const std::string input = argc > 1 ? argv[1] : "assets/sample.jpg";
 
     try
     {
-        const seam::Image image = seam::load_image(input, 3);
-        std::printf("loaded  %s\n", input.c_str());
-        std::printf("        %d x %d, %d channels, %zu bytes\n", image.width,
-                    image.height, image.channels, image.pixels.size());
+        std::filesystem::create_directories("out");
 
-        if (argc > 2)
+        // load sample image
+        const seam::Image bytes = seam::load_image(input, 3);
+        std::printf("loaded %s : %d x %d, %d channels\n", input.c_str(), bytes.width,
+                    bytes.height, bytes.channels);
+
+        // Submit to double
+        const seam::ImageF pixels = seam::to_float(bytes);
+        std::printf("  pixel(0,0) = %.1f %.1f %.1f\n", pixels.at(0, 0, 0), pixels.at(0, 0, 1),
+                    pixels.at(0, 0, 2));
+
+        // Testo Pesto
+        write_png(pixels, "out/1_float.png");
+        write_png(bytes, "out/2_roundtrip.png");
+
+        // Sample image but GRAY WOW
+        const seam::ImageF gray = seam::to_float_gray(seam::load_image(input, 1));
+        write_png(gray, "out/3_gray.png");
+
+        // Funny
+        seam::ImageF scratch = pixels;
+        for (double& value : scratch.data)
         {
-            const std::string output = argv[2];
-            seam::save_image(image, output);
-            std::printf("wrote   %s\n", output.c_str());
+            value = (double)((int)(value / 85.0)) * 85.0;
         }
+        write_png(scratch, "out/4_scratch.png");
 
-        // TODO: energy map (Scharr, reflect-101 borders)
-        // TODO: cumulative cost (forward + backward)
-        // TODO: seam search, removal, insertion
-        // TODO: mask-aware protect / object removal
-        std::printf("\ncarving core not implemented yet\n");
+        std::printf("\nopen the PNGs in out/ to check them\n");
         return 0;
     }
     catch (const std::exception& error)

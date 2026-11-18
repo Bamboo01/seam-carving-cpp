@@ -89,6 +89,4 @@ namespace seam
 
     // to bytes but single channel
     ImageF to_float_gray(const Image& image);
-
-
 }
