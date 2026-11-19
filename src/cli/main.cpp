@@ -1,28 +1,29 @@
-// Sandbox for the image layer: load, convert, write something, look at it.
-// Run from the project root so "assets/sample.jpg" and "out/" resolve.
+/**
+ * @file src/cli/main.cpp
+ * @brief Command-line front end: argument parsing and batch runs.
+ *
+ * Seam Carving in C++ - content-aware image resizing.
+ * Ported from https://github.com/vivianhylee/seam-carving
+ *
+ * @author Teo Pek Lin
+ */
 
+#include "seam/carver.hpp"
+#include "seam/energy.hpp"
 #include "seam/image.hpp"
 
+#include <algorithm>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <string>
+#include <utility>
 
 namespace
 {
-    // Dump any working image to disk so it can be eyeballed. One line per stage.
-    void write_png(const seam::ImageF& image, const std::string& path)
-    {
-        seam::save_png(seam::to_bytes(image), path);
-        std::printf("  wrote %-28s %d x %d\n", path.c_str(), image.width, image.height);
-    }
-
-    void write_png(const seam::Image& image, const std::string& path)
-    {
-        seam::save_png(image, path);
-        std::printf("  wrote %-28s %d x %d\n", path.c_str(), image.width, image.height);
-    }
-
     void ensure_parent_directory(const std::string& path)
     {
         const auto parent = std::filesystem::path(path).parent_path();
@@ -50,7 +51,7 @@ namespace
             "\n"
             "examples:\n"
             "  %s assets/sample.jpg -w 400 --height 300 -o out/smaller.png\n"
-            "  %s assets/sample.jpg -w 700 -o out/wider.png\n"
+            "  %s assets/sample.jpg -w 640 --height 480 -o out/wider.png\n"
             "  %s assets/sample.jpg --remove out/mask.png -o out/clean.png\n",
             argv0, argv0, argv0, argv0);
     }
@@ -109,7 +110,7 @@ int main(int argc, char** argv)
         return 2;
     }
 
-    const std::string input = argc > 1 ? argv[1] : "assets/sample.jpg";
+    const std::string input = argv[1];
     std::string output = "out/result.png";
     std::string protect_mask;
     std::string object_mask;
@@ -196,35 +197,46 @@ int main(int argc, char** argv)
 
     try
     {
-        std::filesystem::create_directories("out");
+        const seam::Image loaded = seam::load_image(input, 3);
+        std::printf("input   %s  (%dx%d)\n", input.c_str(), loaded.width, loaded.height);
 
-        // load sample image
-        const seam::Image bytes = seam::load_image(input, 3);
-        std::printf("loaded %s : %d x %d, %d channels\n", input.c_str(), bytes.width,
-                    bytes.height, bytes.channels);
+        seam::CostOptions options;
+        options.fix_right_edge = fix_edges;
 
-        // Submit to double
-        const seam::ImageF pixels = seam::to_float(bytes);
-        std::printf("  pixel(0,0) = %.1f %.1f %.1f\n", pixels.at(0, 0, 0), pixels.at(0, 0, 1),
-                    pixels.at(0, 0, 2));
+        seam::Carver carver(seam::to_float(loaded), options);
 
-        // Testo Pesto
-        write_png(pixels, "out/1_float.png");
-        write_png(bytes, "out/2_roundtrip.png");
-
-        // Sample image but GRAY WOW
-        const seam::ImageF gray = seam::to_float_gray(seam::load_image(input, 1));
-        write_png(gray, "out/3_gray.png");
-
-        // Funny
-        seam::ImageF scratch = pixels;
-        for (double& value : scratch.data)
+        if (!object_mask.empty())
         {
-            value = (double)((int)(value / 85.0)) * 85.0;
+            carver.set_object_mask(seam::to_float_gray(seam::load_image(object_mask, 1)));
+            carver.remove_object();
+            std::printf("removed object using %s\n", object_mask.c_str());
         }
-        write_png(scratch, "out/4_scratch.png");
+        else
+        {
+            if (!protect_mask.empty())
+            {
+                carver.set_protect_mask(
+                    seam::to_float_gray(seam::load_image(protect_mask, 1)));
+            }
 
-        std::printf("\nopen the PNGs in out/ to check them\n");
+            const int width = target_width > 0 ? target_width : loaded.width;
+            const int height = target_height > 0 ? target_height : loaded.height;
+            carver.resize_to(width, height);
+        }
+
+        const seam::ImageF& result = carver.image();
+        std::printf("output  %s  (%dx%d)  %.1f ms\n", output.c_str(), result.width,
+                    result.height, carver.last_elapsed_ms());
+
+        ensure_parent_directory(output);
+        seam::save_image(seam::to_bytes(result), output);
+
+        if (!energy_path.empty())
+        {
+            ensure_parent_directory(energy_path);
+            save_energy_preview(carver.energy(), energy_path);
+            std::printf("energy  %s\n", energy_path.c_str());
+        }
         return 0;
     }
     catch (const std::exception& error)
