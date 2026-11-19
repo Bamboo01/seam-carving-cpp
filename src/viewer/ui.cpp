@@ -131,7 +131,6 @@ void section(const char* title, float y)
 
 } // namespace
 
-// TODO: Connect carve, remove, clear, seam preview, and save to App commands.
 void draw_panel(App& app)
 {
     DrawRectangle(0, 0, 320, GetScreenHeight(), kPanel);
@@ -168,24 +167,41 @@ void draw_panel(App& app)
            std::max(32, max_height), "height");
     (void)unused;
 
-    button({24.0f, 306.0f, 272.0f, 40.0f}, "Carve", app.ready());
+    if (button({24.0f, 306.0f, 272.0f, 40.0f}, "Carve", app.ready()))
+    {
+        app.resize_to_target();
+    }
 
     section("MASK", 372);
     DrawText("paint with left drag, erase with right", 24, 396, 14, kDim);
 
     slider({24.0f, 440.0f, 272.0f, 16.0f}, app.brush_size, 4, 60, "brush radius");
 
-    button({24.0f, 464.0f, 130.0f, 36.0f}, "Remove object", app.ready());
-    button({166.0f, 464.0f, 130.0f, 36.0f}, "Clear mask", app.ready());
+    if (button({24.0f, 464.0f, 130.0f, 36.0f}, "Remove object", app.ready()))
+    {
+        app.remove_object();
+    }
+    if (button({166.0f, 464.0f, 130.0f, 36.0f}, "Clear mask", app.ready()))
+    {
+        app.reset_mask();
+    }
 
-    toggle({24.0f, 512.0f, 272.0f, 36.0f}, app.show_seam, "Show next seam");
+    if (toggle({24.0f, 512.0f, 272.0f, 36.0f}, app.show_seam, "Show next seam") &&
+        app.show_seam && app.seam.empty())
+    {
+        app.rebuild_seam();
+    }
 
     section("RESULT", 570);
     if (app.view == View::Result)
     {
         DrawText(TextFormat("%d x %d", app.result.width, app.result.height), 24, 594, 16,
                  kText);
-        button({24.0f, 620.0f, 130.0f, 36.0f}, "Save PNG", true);
+        if (button({24.0f, 620.0f, 130.0f, 36.0f}, "Save PNG", true))
+        {
+            app.status = app.save_png("out/viewer_result.png") ? "saved out/viewer_result.png"
+                                                               : "could not write output";
+        }
         if (button({166.0f, 620.0f, 130.0f, 36.0f}, "Back to mask", true))
         {
             app.view = View::Edit;
