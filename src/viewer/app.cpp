@@ -11,13 +11,21 @@
  */
 #include "app.hpp"
 
+#include "seam/carver.hpp"
+
 #include <algorithm>
 #include <cmath>
+#include <exception>
+#include <filesystem>
 
 namespace viewer
 {
 namespace
 {
+
+// Carving grows with pixels; keep the preview interactive on large photos. The
+// CLI always runs at full resolution.
+constexpr int kPreviewLimit = 800;
 
 bool point_in(Rectangle rectangle, Vector2 point)
 {
@@ -58,10 +66,45 @@ void upload(Texture2D& texture, bool& valid, const seam::Image& bytes, int forma
 
 } // namespace
 
+bool App::load(const std::string& path)
+{
+    try
+    {
+        const seam::Image loaded = seam::load_image(path, 3);
+        seam::ImageF pixels = seam::to_float(loaded);
+        pixels = seam::downscale_to_fit(pixels, kPreviewLimit);
+
+        source = std::move(pixels);
+        image_path = path;
+
+        target_width = source.width;
+        target_height = source.height;
+
+        mask.allocate(source.width, source.height, 1);
+        result = seam::ImageF{};
+        seam.clear();
+
+        view = View::Edit;
+        dirty = true;
+        mask_dirty = true;
+        canvas_valid = false;
+
+        status = "loaded " + std::to_string(source.width) + "x" +
+                 std::to_string(source.height);
+        return true;
+    }
+    catch (const std::exception& error)
+    {
+        status = std::string("load failed: ") + error.what();
+        return false;
+    }
+}
+
 void App::reset_mask()
 {
     std::fill(mask.data.begin(), mask.data.end(), 0.0);
     mask_dirty = true;
+    seam.clear();
 }
 
 bool App::has_mask() const
@@ -112,6 +155,112 @@ void App::stroke(Vector2 mouse, bool erase)
     }
 
     mask_dirty = true;
+    seam.clear();
+}
+
+void App::resize_to_target()
+{
+    if (source.empty())
+    {
+        return;
+    }
+
+    seam::Carver carver(source);
+    if (!mask_empty())
+    {
+        carver.set_protect_mask(mask);
+    }
+
+    carver.resize_to(target_width, target_height);
+
+    result = carver.image();
+    last_milliseconds = carver.last_elapsed_ms();
+    view = View::Result;
+    dirty = true;
+    status = "resized in " + std::to_string(static_cast<int>(last_milliseconds)) + " ms";
+}
+
+void App::remove_object()
+{
+    if (source.empty() || mask_empty())
+    {
+        status = "paint on the object first";
+        return;
+    }
+
+    seam::Carver carver(source);
+    carver.set_object_mask(mask);
+    carver.remove_object();
+
+    result = carver.image();
+    last_milliseconds = carver.last_elapsed_ms();
+    view = View::Result;
+    dirty = true;
+    status = "object removed in " + std::to_string(static_cast<int>(last_milliseconds)) +
+             " ms";
+}
+
+void App::rebuild_seam()
+{
+    if (source.empty())
+    {
+        return;
+    }
+
+    seam::Carver carver(source);
+    if (!mask_empty())
+    {
+        carver.set_protect_mask(mask);
+    }
+    seam = carver.next_seam();
+}
+
+bool App::save_png(const std::string& path) const
+{
+    try
+    {
+        const auto parent = std::filesystem::path(path).parent_path();
+        if (!parent.empty())
+        {
+            std::filesystem::create_directories(parent);
+        }
+        seam::save_png(seam::to_bytes(displayed()), path);
+        return true;
+    }
+    catch (const std::exception&)
+    {
+        return false;
+    }
+}
+
+void App::update()
+{
+    if (view == View::Edit && canvas_valid)
+    {
+        const Vector2 mouse = GetMousePosition();
+        const bool erasing =
+            IsMouseButtonDown(MOUSE_BUTTON_RIGHT) || IsKeyDown(KEY_LEFT_SHIFT);
+
+        if ((IsMouseButtonDown(MOUSE_BUTTON_LEFT) ||
+             IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) &&
+            point_in(canvas_destination, mouse))
+        {
+            stroke(mouse, erasing);
+        }
+    }
+
+    if (IsKeyPressed(KEY_F1))
+    {
+        credits_open = !credits_open;
+    }
+    if (IsKeyPressed(KEY_L) && !credits_open)
+    {
+        load("assets/sample.jpg");
+    }
+    if (IsKeyPressed(KEY_R) && view == View::Edit)
+    {
+        reset_mask();
+    }
 }
 
 void App::draw()
@@ -132,6 +281,13 @@ void App::draw()
     {
         canvas_valid = false;
         return;
+    }
+
+    if (dirty)
+    {
+        upload(image_texture, textures_valid, seam::to_bytes(picture),
+               PIXELFORMAT_UNCOMPRESSED_R8G8B8);
+        dirty = false;
     }
 
     if (mask_dirty)
@@ -178,6 +334,22 @@ void App::draw()
     {
         DrawTexturePro(mask_texture, source_rect, canvas_destination, Vector2{0.0f, 0.0f},
                        0.0f, WHITE);
+
+        if (show_seam && !seam.empty())
+        {
+            Vector2 previous{};
+            for (std::size_t y = 0; y < seam.size(); ++y)
+            {
+                const float px = canvas_destination.x + (seam[y] + 0.5f) * scale;
+                const float py =
+                    canvas_destination.y + (static_cast<float>(y) + 0.5f) * scale;
+                if (y > 0)
+                {
+                    DrawLineEx(previous, Vector2{px, py}, 1.5f, Color{255, 220, 80, 255});
+                }
+                previous = {px, py};
+            }
+        }
 
         const Vector2 mouse = GetMousePosition();
         if (canvas_valid && point_in(canvas_destination, mouse))
