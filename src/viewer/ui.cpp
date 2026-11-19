@@ -131,6 +131,80 @@ void section(const char* title, float y)
 
 } // namespace
 
+void draw_panel(App& app)
+{
+    DrawRectangle(0, 0, 320, GetScreenHeight(), kPanel);
+    DrawLine(320, 0, 320, GetScreenHeight(), Color{44, 48, 56, 255});
+
+    DrawText("SEAM CARVING", 24, 24, 26, kText);
+    DrawText("content-aware resize", 24, 56, 15, kDim);
+
+    section("SOURCE", 96);
+    if (app.ready())
+    {
+        DrawText(TextFormat("%d x %d", app.source.width, app.source.height), 24, 120, 16,
+                 kText);
+        const bool small = app.source.width < 1024 && app.source.height < 1024;
+        DrawText(small ? "preview: full detail" : "preview: downscaled", 24, 140, 14,
+                 kDim);
+    }
+    else
+    {
+        DrawText("no image", 24, 120, 16, kDim);
+    }
+
+    section("TARGET SIZE", 172);
+    const int max_width = app.ready() ? static_cast<int>(app.source.width * 1.5f) : 100;
+    const int max_height = app.ready() ? static_cast<int>(app.source.height * 1.5f) : 100;
+
+    float unused = 0.0f;
+    app.target_width = std::clamp(app.target_width, 32, std::max(32, max_width));
+    app.target_height = std::clamp(app.target_height, 32, std::max(32, max_height));
+
+    slider({24.0f, 216.0f, 272.0f, 16.0f}, app.target_width, 32, std::max(32, max_width),
+           "width");
+    slider({24.0f, 266.0f, 272.0f, 16.0f}, app.target_height, 32,
+           std::max(32, max_height), "height");
+    (void)unused;
+
+    button({24.0f, 306.0f, 272.0f, 40.0f}, "Carve", app.ready());
+
+    section("MASK", 372);
+    DrawText("paint with left drag, erase with right", 24, 396, 14, kDim);
+
+    slider({24.0f, 440.0f, 272.0f, 16.0f}, app.brush_size, 4, 60, "brush radius");
+
+    button({24.0f, 464.0f, 130.0f, 36.0f}, "Remove object", app.ready());
+    button({166.0f, 464.0f, 130.0f, 36.0f}, "Clear mask", app.ready());
+
+    toggle({24.0f, 512.0f, 272.0f, 36.0f}, app.show_seam, "Show next seam");
+
+    section("RESULT", 570);
+    if (app.view == View::Result)
+    {
+        DrawText(TextFormat("%d x %d", app.result.width, app.result.height), 24, 594, 16,
+                 kText);
+        button({24.0f, 620.0f, 130.0f, 36.0f}, "Save PNG", true);
+        if (button({166.0f, 620.0f, 130.0f, 36.0f}, "Back to mask", true))
+        {
+            app.view = View::Edit;
+            app.dirty = true;
+        }
+    }
+    else
+    {
+        DrawText("nothing carved yet", 24, 594, 15, kDim);
+    }
+
+    if (button({24.0f, 690.0f, 130.0f, 36.0f}, "Credits (F1)", true))
+    {
+        app.credits_open = true;
+    }
+
+    DrawText(app.status.c_str(), 24, 744, 15, kAccent);
+    DrawText("L load sample   R clear mask   F1 credits", 24, 768, 13, kDim);
+}
+
 void draw_credits(const App& app)
 {
     (void)app;
