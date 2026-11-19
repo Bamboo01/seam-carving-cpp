@@ -33,6 +33,7 @@ add_library(seamcore STATIC
   src/core/image.cpp
   src/core/energy.cpp
   src/core/cost.cpp
+  src/core/seam_ops.cpp
 )
 target_include_directories(seamcore
   PUBLIC  "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -43,10 +44,16 @@ target_link_libraries(seamcore PRIVATE seam_warnings)
 add_executable(seamcarve src/cli/main.cpp)
 target_link_libraries(seamcarve PRIVATE seamcore seam_warnings)
 
+# Tests: one executable per module, run with ctest.
 enable_testing()
+
 add_executable(test_cost tests/test_cost.cpp)
 target_link_libraries(test_cost PRIVATE seamcore seam_warnings)
 add_test(NAME cost COMMAND test_cost)
+
+add_executable(test_seam_ops tests/test_seam_ops.cpp)
+target_link_libraries(test_seam_ops PRIVATE seamcore seam_warnings)
+add_test(NAME seam_ops COMMAND test_seam_ops)
 
 # Viewer (raylib) is not wired up yet. When it is: FetchContent raylib, add
 # src/viewer/main.cpp, link seamcore raylib. Keep the dependency one-way.
