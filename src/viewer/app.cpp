@@ -8,10 +8,6 @@
  * from https://github.com/vivianhylee/seam-carving
  *
  * @author Loh Jun Wei
- * Lim Rui Heng
- * @author Loh Jun Wei
- *
- * @author Loh Jun Wei
  */
 #include "app.hpp"
 
@@ -26,6 +22,38 @@ namespace
 bool point_in(Rectangle rectangle, Vector2 point)
 {
     return CheckCollisionPointRec(point, rectangle);
+}
+
+void upload(Texture2D& texture, bool& valid, const seam::Image& bytes, int format)
+{
+    if (bytes.width <= 0 || bytes.height <= 0)
+    {
+        return;
+    }
+
+    if (valid && (texture.width != bytes.width || texture.height != bytes.height))
+    {
+        UnloadTexture(texture);
+        valid = false;
+    }
+
+    Image raw{};
+    raw.data = const_cast<std::uint8_t*>(bytes.pixels.data());
+    raw.width = bytes.width;
+    raw.height = bytes.height;
+    raw.mipmaps = 1;
+    raw.format = format;
+
+    if (!valid)
+    {
+        texture = LoadTextureFromImage(raw);
+        valid = true;
+    }
+    else
+    {
+        UpdateTexture(texture, raw.data);
+    }
+    SetTextureFilter(texture, TEXTURE_FILTER_BILINEAR);
 }
 
 } // namespace
@@ -84,6 +112,82 @@ void App::stroke(Vector2 mouse, bool erase)
     }
 
     mask_dirty = true;
+}
+
+void App::draw()
+{
+    const Rectangle canvas{340.0f, 40.0f, 900.0f, 720.0f};
+    DrawRectangleRec(canvas, Color{24, 26, 30, 255});
+
+    if (source.empty())
+    {
+        DrawText("Drop an image here, or press L", static_cast<int>(canvas.x) + 40,
+                 static_cast<int>(canvas.y) + 40, 24, LIGHTGRAY);
+        canvas_valid = false;
+        return;
+    }
+
+    const seam::ImageF& picture = displayed();
+    if (picture.empty())
+    {
+        canvas_valid = false;
+        return;
+    }
+
+    if (mask_dirty)
+    {
+        seam::Image overlay;
+        overlay.width = mask.width;
+        overlay.height = mask.height;
+        overlay.channels = 4;
+        overlay.pixels.resize(static_cast<std::size_t>(mask.width) * mask.height * 4);
+
+        for (std::size_t i = 0; i < mask.data.size(); ++i)
+        {
+            const bool painted = mask.data[i] > 0.0;
+            overlay.pixels[i * 4 + 0] = 255;
+            overlay.pixels[i * 4 + 1] = 60;
+            overlay.pixels[i * 4 + 2] = 60;
+            overlay.pixels[i * 4 + 3] = painted ? 130 : 0;
+        }
+        upload(mask_texture, mask_texture_valid, overlay,
+               PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+        mask_dirty = false;
+    }
+
+    const float scale = std::min(canvas.width / static_cast<float>(picture.width),
+                                 canvas.height / static_cast<float>(picture.height));
+    const float width = picture.width * scale;
+    const float height = picture.height * scale;
+
+    canvas_destination = {canvas.x + (canvas.width - width) * 0.5f,
+                          canvas.y + (canvas.height - height) * 0.5f, width, height};
+    canvas_scale = scale;
+    canvas_valid = true;
+
+    const Rectangle source_rect{0.0f, 0.0f, static_cast<float>(picture.width),
+                                static_cast<float>(picture.height)};
+
+    if (textures_valid)
+    {
+        DrawTexturePro(image_texture, source_rect, canvas_destination, Vector2{0.0f, 0.0f},
+                       0.0f, WHITE);
+    }
+
+    if (view == View::Edit)
+    {
+        DrawTexturePro(mask_texture, source_rect, canvas_destination, Vector2{0.0f, 0.0f},
+                       0.0f, WHITE);
+
+        const Vector2 mouse = GetMousePosition();
+        if (canvas_valid && point_in(canvas_destination, mouse))
+        {
+            DrawCircleLines(static_cast<int>(mouse.x), static_cast<int>(mouse.y),
+                            static_cast<float>(brush_size), Color{255, 220, 80, 255});
+        }
+    }
+
+    DrawRectangleLinesEx(canvas, 1.0f, Color{70, 74, 82, 255});
 }
 
 } // namespace viewer
