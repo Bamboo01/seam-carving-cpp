@@ -27,27 +27,6 @@ std::pair<int, int> backward_window(int x, int width, bool fix_right_edge)
     return {start, std::max(end, start + 1)};
 }
 
-// TODO: Remove this temporary placeholder and use ForwardNeighbours from
-// "seam/energy.hpp" once the energy module is merged.
-struct TempForwardNeighbours
-{
-    ImageF x;
-    ImageF y_left;
-    ImageF y_right;
-};
-
-TempForwardNeighbours placeholder_forward_neighbours(const ImageF& energy)
-{
-    TempForwardNeighbours out;
-    if (energy.width > 0 && energy.height > 0)
-    {
-        out.x.allocate(energy.width, energy.height, 1);
-        out.y_left.allocate(energy.width, energy.height, 1);
-        out.y_right.allocate(energy.width, energy.height, 1);
-    }
-    return out;
-}
-
 } // namespace
 
 ImageF cumulative_cost_forward(const ImageF& image, const ImageF& energy,
@@ -58,10 +37,7 @@ ImageF cumulative_cost_forward(const ImageF& image, const ImageF& energy,
     // are where upstream's window is off by one).
     (void)options;
 
-    // TODO: Replace placeholder with:
-    //   const ForwardNeighbours neighbours = forward_energy_neighbours(image);
-    (void)image;
-    const TempForwardNeighbours neighbours = placeholder_forward_neighbours(energy);
+    const ForwardNeighbours neighbours = forward_energy_neighbours(image);
     ImageF out = energy;
 
     const int width = energy.width;

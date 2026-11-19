@@ -9,7 +9,7 @@
  */
 #pragma once
 
-// TODO: #include "seam/energy.hpp" once the energy module is merged.
+#include "seam/energy.hpp"
 #include "seam/image.hpp"
 
 namespace seam
