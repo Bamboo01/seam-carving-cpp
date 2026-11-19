@@ -1,5 +1,5 @@
 /**
-* @file src/core/image.cpp
+ * @file src/core/image.cpp
  * @brief Image loading and saving through stb, and numeric conversions.
  *
  * @author Sherwyn Low
@@ -10,13 +10,15 @@
 // stb is third-party C; silence its warnings rather than fix it.
 #if defined(_MSC_VER)
 #pragma warning(push)
-#pragma warning(disable : 4100 4244 4245 4267 4456 4701 4703 6385 6386)
+#pragma warning(disable : 4100 4244 4245 4267 4456 4505 4701 4703 6385 6386)
 #endif
 
+#define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_FAILURE_USERMSG
 #include "stb/stb_image.h"
 
+#define STB_IMAGE_WRITE_STATIC
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb/stb_image_write.h"
 
@@ -26,6 +28,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <stdexcept>
 
 //
@@ -180,5 +183,58 @@ namespace seam
             throw std::invalid_argument("to_float_gray: expected a single-channel image");
         }
         return to_float(image);
+    }
+
+    ImageF downscale_to_fit(const ImageF& image, int max_dimension)
+    {
+        if (max_dimension <= 0 || image.empty())
+            return image;
+
+        const int longest = std::max(image.width, image.height);
+        if (longest <= max_dimension)
+            return image;
+
+        const double scale =
+            static_cast<double>(max_dimension) / static_cast<double>(longest);
+        const int out_width = std::max(1, static_cast<int>(std::lround(image.width * scale)));
+        const int out_height =
+            std::max(1, static_cast<int>(std::lround(image.height * scale)));
+
+        ImageF out;
+        out.allocate(out_width, out_height, image.channels);
+
+        // Area average: each destination pixel owns a rectangle of source pixels.
+        for (int y = 0; y < out_height; ++y)
+        {
+            const int y0 =
+                static_cast<int>(static_cast<long long>(y) * image.height / out_height);
+            const int y1 = std::max(
+                y0 + 1, static_cast<int>(static_cast<long long>(y + 1) * image.height /
+                                         out_height));
+
+            for (int x = 0; x < out_width; ++x)
+            {
+                const int x0 =
+                    static_cast<int>(static_cast<long long>(x) * image.width / out_width);
+                const int x1 = std::max(
+                    x0 + 1, static_cast<int>(static_cast<long long>(x + 1) * image.width /
+                                             out_width));
+
+                const double count = static_cast<double>((x1 - x0) * (y1 - y0));
+                for (int c = 0; c < image.channels; ++c)
+                {
+                    double sum = 0.0;
+                    for (int sy = y0; sy < y1; ++sy)
+                    {
+                        for (int sx = x0; sx < x1; ++sx)
+                        {
+                            sum += image.at(sx, sy, c);
+                        }
+                    }
+                    out.at(x, y, c) = sum / count;
+                }
+            }
+        }
+        return out;
     }
 } // namespace seam

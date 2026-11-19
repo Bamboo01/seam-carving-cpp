@@ -89,4 +89,9 @@ namespace seam
 
     // to bytes but single channel
     ImageF to_float_gray(const Image& image);
+
+    // Area-average downscale so the viewer can carve a preview at interactive
+    // speed on large photos. Aspect ratio is preserved; returns a copy when the
+    // image already fits.
+    ImageF downscale_to_fit(const ImageF& image, int max_dimension);
 }
