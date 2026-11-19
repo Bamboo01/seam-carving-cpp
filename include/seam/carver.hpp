@@ -1,8 +1,19 @@
+/**
+ * @file include/seam/carver.hpp
+ * @brief Carver pipeline: resize, expand, protect, and object removal.
+ *
+ * Seam Carving in C++ - content-aware image resizing.
+ * Ported from https://github.com/vivianhylee/seam-carving
+ *
+ * @author Teo Pek Lin
+ */
 #pragma once
 
 #include "seam/cost.hpp"
 #include "seam/image.hpp"
 #include "seam/seam_ops.hpp"
+
+#include <utility>
 
 namespace seam
 {
@@ -76,7 +87,7 @@ private:
     void carve_object();
     ImageF weighted_energy() const;
     bool mask_has_pixels() const;
-    std::pair<int, int> object_bounds() const
+    std::pair<int, int> object_bounds() const;
 };
 
 } // namespace seam

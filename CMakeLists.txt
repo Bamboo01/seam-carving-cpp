@@ -34,6 +34,7 @@ add_library(seamcore STATIC
   src/core/energy.cpp
   src/core/cost.cpp
   src/core/seam_ops.cpp
+  src/core/carver.cpp
 )
 target_include_directories(seamcore
   PUBLIC  "${CMAKE_CURRENT_SOURCE_DIR}/include"
