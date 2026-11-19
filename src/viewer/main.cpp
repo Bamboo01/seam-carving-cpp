@@ -7,9 +7,13 @@
  *
  * @author Loh Jun Wei
  */
+#include "app.hpp"
+#include "ui.hpp"
+
 #include "raylib.h"
 #include "rlgl.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -44,10 +48,23 @@ bool parse_size(const std::string& text, int& width, int& height)
     return width > 0 && height > 0;
 }
 
+bool has_flag(int argc, char** argv, const char* flag)
+{
+    for (int i = 1; i < argc; ++i)
+    {
+        if (std::strcmp(argv[i], flag) == 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
 {
+    const std::string image = argument_value(argc, argv, "--image");
     const std::string capture = argument_value(argc, argv, "--capture");
     const std::string carve = argument_value(argc, argv, "--carve");
 
@@ -76,20 +93,71 @@ int main(int argc, char** argv)
     // when scaled up to 16-26px.
     SetTextureFilter(GetFontDefault().texture, TEXTURE_FILTER_POINT);
 
-    // TODO: Create the app, load the sample or --image, and apply the demo flags.
+    viewer::App app;
+    app.load(image.empty() ? std::string("assets/sample.jpg") : image);
+
+    // Test hooks: paint a patch or open the credits without a mouse, so the
+    // interface can be screenshotted from a script.
+    if (has_flag(argc, argv, "--paint") && app.ready())
+    {
+        const int x0 = app.source.width * 72 / 100;
+        const int y0 = app.source.height * 58 / 100;
+        const int w = std::max(8, app.source.width * 10 / 100);
+        const int h = std::max(8, app.source.height * 16 / 100);
+
+        for (int y = y0; y < y0 + h && y < app.mask.height; ++y)
+        {
+            for (int x = x0; x < x0 + w && x < app.mask.width; ++x)
+            {
+                app.mask.at(x, y) = 255.0;
+            }
+        }
+        app.mask_dirty = true;
+        app.show_seam = true;
+        app.rebuild_seam();
+    }
+    if (has_flag(argc, argv, "--credits"))
+    {
+        app.credits_open = true;
+    }
+
+    if (demo_width > 0)
+    {
+        app.target_width = demo_width;
+        app.target_height = demo_height;
+        app.resize_to_target();
+    }
+
     int frames = 0;
     bool shot_taken = false;
 
     while (!WindowShouldClose())
     {
-        // TODO: Handle dropped files and call App::update().
+        if (IsFileDropped())
+        {
+            FilePathList dropped = LoadDroppedFiles();
+            if (dropped.count > 0)
+            {
+                app.load(dropped.paths[0]);
+            }
+            UnloadDroppedFiles(dropped);
+        }
+
+        app.update();
         ++frames;
 
         BeginDrawing();
         ClearBackground(Color{14, 15, 18, 255});
-        // TODO: Draw the app, control panel, and credits.
-        // TODO: Wait for the result view when capturing a --carve run.
-        const bool ready_to_capture = frames == 4;
+        app.draw();
+        viewer::draw_panel(app);
+        if (app.credits_open)
+        {
+            viewer::draw_credits(app);
+        }
+
+        const bool ready_to_capture =
+            demo_width > 0 ? (app.view == viewer::View::Result && frames > 3) : frames == 4;
+
         if (!capture.empty() && ready_to_capture && !shot_taken)
         {
             // raylib batches geometry until EndDrawing(); without this flush the
@@ -109,7 +177,15 @@ int main(int argc, char** argv)
         }
     }
 
-    // TODO: Unload the app textures before closing the window.
+    if (app.textures_valid)
+    {
+        UnloadTexture(app.image_texture);
+    }
+    if (app.mask_texture_valid)
+    {
+        UnloadTexture(app.mask_texture);
+    }
+
     CloseWindow();
     return 0;
 }
