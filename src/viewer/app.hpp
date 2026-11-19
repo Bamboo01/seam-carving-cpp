@@ -53,16 +53,21 @@ struct App
     float canvas_scale = 1.0f;
     bool canvas_valid = false;
 
+    // TODO: Implement image loading with the core preview downscaler.
     bool load(const std::string& path);
     void reset_mask();
     void stroke(Vector2 mouse, bool erase);
+    // TODO: Connect keyboard and mouse input to the app commands.
     void update();
+    // TODO: Upload the source/result image and draw the next seam.
     void draw();
 
+    // TODO: Implement resizing and object removal with seam::Carver.
     // Both run on the caller's thread and return when the result is ready.
     void resize_to_target();
     void remove_object();
 
+    // TODO: Compute the preview seam and implement PNG export.
     void rebuild_seam();
     bool save_png(const std::string& path) const;
 

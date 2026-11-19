@@ -131,6 +131,7 @@ void section(const char* title, float y)
 
 } // namespace
 
+// TODO: Connect carve, remove, clear, seam preview, and save to App commands.
 void draw_panel(App& app)
 {
     DrawRectangle(0, 0, 320, GetScreenHeight(), kPanel);
