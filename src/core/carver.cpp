@@ -18,7 +18,7 @@ namespace seam
 namespace
 {
 
-// +1000 to shield a protected region and -100 to force a seam
+// +1000 to shield a protected region and -1000 to force a seam
 // thorugh an object
 constexpr double kMaskWeight = 1000.0;
 
@@ -177,6 +177,58 @@ void Carver::seams_carving(int target_width, int target_height)
 
         seams_insertion(delta_rows);
         image_ = rotate_cw(image_);
+    }
+}
+
+void Carver::seams_insertion(int count)
+{
+    if (count <= 0)
+    {
+        return;
+    }
+
+    // record the seams on a throwaway copy (they are found on a shrinking image),
+    // then replay them onto the original, shifting each recorded seam by the two
+    // columns every earlier insertion added.
+    ImageF scratch_image = image_;
+    ImageF scratch_mask = mask_;
+    const bool protect = mask_kind_ == MaskKind::Protect;
+
+    std::vector<Seam> recorded;
+    for (int i = 0; i < count && scratch_image.width > 1; ++i)
+    {
+        const ImageF energy = [&]
+        {
+            ImageF map = energy_map(scratch_image);
+            if (protect)
+            {
+                scale_where_masked(map, scratch_mask, kMaskWeight);
+            }
+            return map;
+        }();
+
+        const ImageF cost = cumulative_cost_backward(energy, options_);
+        const Seam seam = find_seam(cost, options_.fix_right_edge);
+
+        recorded.push_back(seam);
+        delete_seam(scratch_image, seam);
+        if (protect)
+        {
+            delete_seam_on_mask(scratch_mask, seam);
+        }
+    }
+
+    for (std::size_t i = 0; i < recorded.size(); ++i)
+    {
+        add_seam(image_, recorded[i]);
+        if (protect)
+        {
+            add_seam_on_mask(mask_, recorded[i]);
+        }
+        for (std::size_t j = i + 1; j < recorded.size(); ++j)
+        {
+            shift_seam(recorded[j], recorded[i]);
+        }
     }
 }
 
