@@ -56,5 +56,20 @@ add_executable(test_seam_ops tests/test_seam_ops.cpp)
 target_link_libraries(test_seam_ops PRIVATE seamcore seam_warnings)
 add_test(NAME seam_ops COMMAND test_seam_ops)
 
-# Viewer (raylib) is not wired up yet. When it is: FetchContent raylib, add
-# src/viewer/main.cpp, link seamcore raylib. Keep the dependency one-way.
+# ---------------------------------------------------------------------------
+# Viewer: raylib only, one-way dependency on seamcore.
+# ---------------------------------------------------------------------------
+include(FetchContent)
+FetchContent_Declare(raylib
+  GIT_REPOSITORY https://github.com/raysan5/raylib.git
+  GIT_TAG 5.5
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(raylib)
+
+add_executable(seamcarve_viewer
+  src/viewer/main.cpp
+  src/viewer/app.cpp
+  src/viewer/ui.cpp
+)
+target_link_libraries(seamcarve_viewer PRIVATE seamcore raylib seam_warnings)
