@@ -10,11 +10,22 @@
 #include "seam/cost.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace seam
 {
 namespace
 {
+
+// Python: output[row - 1, max(col - 1, 0) : min(col + 2, n - 1)]
+// The slice end is exclusive, so the rightmost column loses its right-hand
+// candidate. `fix_right_edge` restores the symmetric window.
+std::pair<int, int> backward_window(int x, int width, bool fix_right_edge)
+{
+    const int start = std::max(x - 1, 0);
+    const int end = fix_right_edge ? std::min(x + 2, width) : std::min(x + 2, width - 1);
+    return {start, std::max(end, start + 1)};
+}
 
 // TODO: Remove this temporary placeholder and use ForwardNeighbours from
 // "seam/energy.hpp" once the energy module is merged.
@@ -39,8 +50,14 @@ TempForwardNeighbours placeholder_forward_neighbours(const ImageF& energy)
 
 } // namespace
 
-ImageF cumulative_cost_forward(const ImageF& image, const ImageF& energy)
+ImageF cumulative_cost_forward(const ImageF& image, const ImageF& energy,
+                               const CostOptions& options)
 {
+    // The forward pass always looks at the same three neighbours, so the
+    // right-edge option does not apply here (the backward pass and seam search
+    // are where upstream's window is off by one).
+    (void)options;
+
     // TODO: Replace placeholder with:
     //   const ForwardNeighbours neighbours = forward_energy_neighbours(image);
     (void)image;
@@ -96,7 +113,7 @@ ImageF cumulative_cost_forward(const ImageF& image, const ImageF& energy)
     return out;
 }
 
-ImageF cumulative_cost_backward(const ImageF& energy)
+ImageF cumulative_cost_backward(const ImageF& energy, const CostOptions& options)
 {
     ImageF out = energy;
 
@@ -109,8 +126,7 @@ ImageF cumulative_cost_backward(const ImageF& energy)
     {
         for (int x = 0; x < width; ++x)
         {
-            const int start = std::max(x - 1, 0);
-            const int end = std::min(x + 2, width);
+            const auto [start, end] = backward_window(x, width, options.fix_right_edge);
 
             double best = out.at(start, y - 1);
             for (int i = start + 1; i < end; ++i)
