@@ -31,6 +31,7 @@ endif()
 # Core: pure CPU, no windowing, no graphics API.
 add_library(seamcore STATIC
   src/core/image.cpp
+  src/core/cost.cpp
 )
 target_include_directories(seamcore
   PUBLIC  "${CMAKE_CURRENT_SOURCE_DIR}/include"
