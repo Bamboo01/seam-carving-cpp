@@ -12,8 +12,10 @@
 #include "seam/cost.hpp"
 #include "seam/image.hpp"
 #include "seam/seam_ops.hpp"
+#include "seam/seam_search.hpp"
 
 #include <utility>
+#include <vector>
 
 namespace seam
 {
@@ -37,6 +39,17 @@ public:
     bool has_object_mask() const
     {
         return mask_kind_ == MaskKind::Object;
+    }
+
+    // Seam finder used by every pass. Defaults to the reference's forward DP.
+    void set_method(SeamMethod method)
+    {
+        method_ = method;
+    }
+
+    SeamMethod method() const
+    {
+        return method_;
     }
 
     void resize_to(int width, int height);
@@ -65,6 +78,21 @@ public:
         return last_elapsed_ms_;
     }
 
+    // The source image with every seam the last run removed or duplicated
+    // painted red, mapped back to source coordinates.
+    ImageF seam_overlay() const;
+
+    int seams_carved() const
+    {
+        return seams_carved_;
+    }
+
+    // Energy along each seam, summed, measured on the image it was taken from.
+    double total_seam_energy() const
+    {
+        return total_seam_energy_;
+    }
+
 private:
     enum class MaskKind
     {
@@ -80,6 +108,14 @@ private:
     MaskKind mask_kind_ = MaskKind::None;
     CostOptions options_;
     double last_elapsed_ms_ = 0.0;
+    SeamMethod method_ = SeamMethod::DynamicProgramming;
+
+    // Two channels per pixel: the source x and y it came from. Carried through
+    // every delete, insert and rotation so seams can be drawn on the source.
+    ImageF positions_;
+    std::vector<std::size_t> carved_;
+    int seams_carved_ = 0;
+    double total_seam_energy_ = 0.0;
 
     void seams_removal(int count);
     void seams_carving(int target_width, int target_height);
@@ -88,6 +124,9 @@ private:
     ImageF weighted_energy() const;
     bool mask_has_pixels() const;
     std::pair<int, int> object_bounds() const;
+    Seam choose_seam(const ImageF& image, const ImageF& energy, bool insertion) const;
+    void start_run();
+    void record_seam(const ImageF& positions, const Seam& seam);
 };
 
 } // namespace seam

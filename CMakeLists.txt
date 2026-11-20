@@ -34,6 +34,7 @@ add_library(seamcore STATIC
   src/core/energy.cpp
   src/core/cost.cpp
   src/core/seam_ops.cpp
+  src/core/seam_search.cpp
   src/core/carver.cpp
 )
 target_include_directories(seamcore
@@ -55,6 +56,10 @@ add_test(NAME cost COMMAND test_cost)
 add_executable(test_seam_ops tests/test_seam_ops.cpp)
 target_link_libraries(test_seam_ops PRIVATE seamcore seam_warnings)
 add_test(NAME seam_ops COMMAND test_seam_ops)
+
+add_executable(test_seam_search tests/test_seam_search.cpp)
+target_link_libraries(test_seam_search PRIVATE seamcore seam_warnings)
+add_test(NAME seam_search COMMAND test_seam_search)
 
 # ---------------------------------------------------------------------------
 # Viewer: raylib only, one-way dependency on seamcore.

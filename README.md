@@ -33,6 +33,8 @@ build\bin\seamcarve.exe assets\sample.jpg -w 640 --height 480 -o out\wider.png
 build\bin\seamcarve.exe assets\sample.jpg --remove out\mask.png -o out\clean.png
 build\bin\seamcarve.exe assets\sample.jpg -w 400 --protect out\mask.png -o out\kept.png
 build\bin\seamcarve.exe assets\sample.jpg --energy out\energy.png
+build\bin\seamcarve.exe assets\sample.jpg -w 400 --method graphcut --seams out\seams.png
+build\bin\seamcarve.exe assets\sample.jpg -w 400 --compare out\compare
 ```
 
 ```
@@ -43,6 +45,9 @@ build\bin\seamcarve.exe assets\sample.jpg --energy out\energy.png
     --remove FILE   mask of an object to delete, then restore the size
     --energy FILE   also write the energy map as a PNG
     --fix-edges     repair the reference's right-edge window bug
+    --method NAME   seam finder: dp (default), dp-backward, greedy, graphcut
+    --seams FILE    also write the source with every carved seam in red
+    --compare DIR   run every method, write results, seam overlays and summary.csv
 ```
 
 | shrink to 400x300 | grow to 640x480 |
@@ -92,6 +97,31 @@ bytes ──► float64 ──► energy ──► cumulative cost ──► sea
    under an object mask, forcing the cheapest path away from or through it.
 5. **Rows** — rotate 90 degrees, reuse the column code, rotate back.
 
+## Comparing seam finders
+
+`--compare` resizes with each seam finder and records time and seam energy.
+Sample image, 512x384 to 400x384 (112 vertical seams), g++ -O2 on a 2-core
+Linux VM:
+
+| method | ms / seam | first seam energy | total seam energy |
+|---|---|---|---|
+| dp (forward energy, reference) | 4.5 | 46,458 | 6,663,868 |
+| dp-backward | 3.3 | 46,428 | 6,653,016 |
+| greedy | 2.0 | 134,678 | 11,911,256 |
+| graphcut | 2,490 | 46,428 | 6,653,016 |
+
+- **Greedy** starts at the cheapest top-row pixel and only looks one row ahead.
+  On the sample every seam starts in the dark left sky and walks straight
+  down, so it eats the bushes on the left. Its seams carry 79% more energy.
+- **Graph cut** builds one node per pixel, sets the right-edge capacity of
+  each pixel to its energy, adds infinite back and diagonal edges so a finite
+  cut is a connected seam, and solves min-cut with Boykov-Kolmogorov max-flow.
+  It returns the same seams as `dp-backward` (the output is pixel-identical),
+  which `tests/test_seam_search.cpp` also checks on 300 random maps, but each
+  seam is a max-flow over ~200k nodes, so it is several hundred times slower.
+- The forward-energy `dp` minimises a different cost (new edges a removal
+  creates), so its seams carry slightly more plain energy by design.
+
 ### Fidelity notes
 
 - The reference keeps an end-exclusive window at the right edge of both DP
@@ -105,7 +135,7 @@ bytes ──► float64 ──► energy ──► cumulative cost ──► sea
 ## Layout
 
 ```
-include/seam/    image, energy, cost, seam_ops, carver
+include/seam/    image, energy, cost, seam_ops, seam_search, carver
 src/core/        the algorithm, no graphics dependency
 src/cli/         command-line front end
 src/viewer/      raylib application (links seamcore, never the reverse)

@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <stdexcept>
 #include <utility>
 
@@ -56,6 +57,7 @@ Carver::Carver(ImageF source, CostOptions options)
     {
         throw std::invalid_argument("Carver: source image is empty");
     }
+    start_run();
 }
 
 void Carver::set_protect_mask(ImageF mask)
@@ -79,6 +81,79 @@ void Carver::reset()
     image_ = source_;
     mask_ = mask_original_;
     last_elapsed_ms_ = 0.0;
+    start_run();
+}
+
+void Carver::start_run()
+{
+    positions_.allocate(source_.width, source_.height, 2);
+    for (int y = 0; y < source_.height; ++y)
+    {
+        for (int x = 0; x < source_.width; ++x)
+        {
+            positions_.at(x, y, 0) = x;
+            positions_.at(x, y, 1) = y;
+        }
+    }
+    carved_.clear();
+    seams_carved_ = 0;
+    total_seam_energy_ = 0.0;
+}
+
+void Carver::record_seam(const ImageF& positions, const Seam& seam)
+{
+    for (int y = 0; y < positions.height; ++y)
+    {
+        const int x = seam[static_cast<std::size_t>(y)];
+        const int sx = std::clamp(static_cast<int>(std::lround(positions.at(x, y, 0))), 0,
+                                  source_.width - 1);
+        const int sy = std::clamp(static_cast<int>(std::lround(positions.at(x, y, 1))), 0,
+                                  source_.height - 1);
+        carved_.push_back(static_cast<std::size_t>(sy) * static_cast<std::size_t>(source_.width) +
+                          static_cast<std::size_t>(sx));
+    }
+    ++seams_carved_;
+}
+
+ImageF Carver::seam_overlay() const
+{
+    ImageF out = source_;
+    for (std::size_t index : carved_)
+    {
+        const int x = static_cast<int>(index % static_cast<std::size_t>(source_.width));
+        const int y = static_cast<int>(index / static_cast<std::size_t>(source_.width));
+        if (out.channels >= 3)
+        {
+            out.at(x, y, 0) = 255.0;
+            out.at(x, y, 1) = 40.0;
+            out.at(x, y, 2) = 40.0;
+        }
+        else
+        {
+            out.at(x, y, 0) = 255.0;
+        }
+    }
+    return out;
+}
+
+Seam Carver::choose_seam(const ImageF& image, const ImageF& energy, bool insertion) const
+{
+    switch (method_)
+    {
+    case SeamMethod::Greedy:
+        return find_seam_greedy(energy);
+    case SeamMethod::GraphCut:
+        return find_seam_graph_cut(energy);
+    case SeamMethod::DpBackward:
+        return find_seam(cumulative_cost_backward(energy, options_), options_.fix_right_edge);
+    case SeamMethod::DynamicProgramming:
+        break;
+    }
+
+    // The reference removes with forward energy and inserts with backward.
+    const ImageF cost = insertion ? cumulative_cost_backward(energy, options_)
+                                  : cumulative_cost_forward(image, energy, options_);
+    return find_seam(cost, options_.fix_right_edge);
 }
 
 ImageF Carver::weighted_energy() const
@@ -104,8 +179,7 @@ ImageF Carver::energy() const
 Seam Carver::next_seam() const
 {
     const ImageF energy = weighted_energy();
-    const ImageF cost = cumulative_cost_forward(image_, energy, options_);
-    return find_seam(cost, options_.fix_right_edge);
+    return choose_seam(image_, energy, false);
 }
 
 void Carver::resize_to(int width, int height)
@@ -117,6 +191,7 @@ void Carver::resize_to(int width, int height)
 
     image_ = source_;
     mask_ = mask_original_;
+    start_run();
 
     seams_carving(target_width, target_height);
 
@@ -131,10 +206,12 @@ void Carver::seams_removal(int count)
     for (int i = 0; i < count && image_.width > 1; ++i)
     {
         const ImageF energy = weighted_energy();
-        const ImageF cost = cumulative_cost_forward(image_, energy, options_);
-        const Seam seam = find_seam(cost, options_.fix_right_edge);
+        const Seam seam = choose_seam(image_, energy, false);
+        total_seam_energy_ += seam_energy(energy, seam);
+        record_seam(positions_, seam);
 
         delete_seam(image_, seam);
+        delete_seam(positions_, seam);
         if (protect)
         {
             delete_seam_on_mask(mask_, seam);
@@ -160,23 +237,27 @@ void Carver::seams_carving(int target_width, int target_height)
     if (delta_rows < 0)
     {
         image_ = rotate_ccw(image_);
+        positions_ = rotate_ccw(positions_);
 
         if (mask_kind_ == MaskKind::Protect)
             mask_ = rotate_ccw(mask_);
 
         seams_removal(-delta_rows);
         image_ = rotate_cw(image_);
+        positions_ = rotate_cw(positions_);
     }
 
     else if (delta_rows > 0)
     {
         image_ = rotate_ccw(image_);
+        positions_ = rotate_ccw(positions_);
 
         if (mask_kind_ == MaskKind::Protect)
             mask_ = rotate_ccw(mask_);
 
         seams_insertion(delta_rows);
         image_ = rotate_cw(image_);
+        positions_ = rotate_cw(positions_);
     }
 }
 
@@ -192,6 +273,7 @@ void Carver::seams_insertion(int count)
     // columns every earlier insertion added.
     ImageF scratch_image = image_;
     ImageF scratch_mask = mask_;
+    ImageF scratch_positions = positions_;
     const bool protect = mask_kind_ == MaskKind::Protect;
 
     std::vector<Seam> recorded;
@@ -207,11 +289,13 @@ void Carver::seams_insertion(int count)
             return map;
         }();
 
-        const ImageF cost = cumulative_cost_backward(energy, options_);
-        const Seam seam = find_seam(cost, options_.fix_right_edge);
+        const Seam seam = choose_seam(scratch_image, energy, true);
+        total_seam_energy_ += seam_energy(energy, seam);
+        record_seam(scratch_positions, seam);
 
         recorded.push_back(seam);
         delete_seam(scratch_image, seam);
+        delete_seam(scratch_positions, seam);
         if (protect)
         {
             delete_seam_on_mask(scratch_mask, seam);
@@ -221,6 +305,7 @@ void Carver::seams_insertion(int count)
     for (std::size_t i = 0; i < recorded.size(); ++i)
     {
         add_seam(image_, recorded[i]);
+        add_seam(positions_, recorded[i]);
         if (protect)
         {
             add_seam_on_mask(mask_, recorded[i]);
@@ -243,6 +328,7 @@ void Carver::remove_object()
 
     image_ = source_;
     mask_ = mask_original_;
+    start_run();
 
     const bool rotated = [this]
     {
@@ -254,6 +340,7 @@ void Carver::remove_object()
     {
         image_ = rotate_ccw(image_);
         mask_ = rotate_ccw(mask_);
+        positions_ = rotate_ccw(positions_);
     }
 
     // Every pass deletes one seam and carves that same seam out of the mask, so
@@ -262,10 +349,12 @@ void Carver::remove_object()
     while (mask_has_pixels() && image_.width > 1 && guard-- > 0)
     {
         const ImageF energy = weighted_energy();
-        const ImageF cost = cumulative_cost_forward(image_, energy, options_);
-        const Seam seam = find_seam(cost, options_.fix_right_edge);
+        const Seam seam = choose_seam(image_, energy, false);
+        total_seam_energy_ += seam_energy(energy, seam);
+        record_seam(positions_, seam);
 
         delete_seam(image_, seam);
+        delete_seam(positions_, seam);
         delete_seam_on_mask(mask_, seam);
     }
 
@@ -276,6 +365,7 @@ void Carver::remove_object()
     if (rotated)
     {
         image_ = rotate_cw(image_);
+        positions_ = rotate_cw(positions_);
     }
 
     const auto finished = std::chrono::steady_clock::now();

@@ -11,6 +11,7 @@
 #include "seam/carver.hpp"
 #include "seam/energy.hpp"
 #include "seam/image.hpp"
+#include "seam/seam_search.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -21,6 +22,7 @@
 #include <filesystem>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -47,13 +49,19 @@ namespace
             "      --remove FILE   mask of an object to delete, then restore size\n"
             "      --energy FILE   also write the energy map as a PNG\n"
             "      --fix-edges     repair the upstream right-edge window bug\n"
+            "      --method NAME   seam finder: dp (default), dp-backward, greedy, graphcut\n"
+            "      --seams FILE    also write the source with every carved seam in red\n"
+            "      --compare DIR   resize with every method, write results, seams and\n"
+            "                      DIR/summary.csv, and print a timing table\n"
             "  -h, --help          this message\n"
             "\n"
             "examples:\n"
             "  %s assets/sample.jpg -w 400 --height 300 -o out/smaller.png\n"
             "  %s assets/sample.jpg -w 640 --height 480 -o out/wider.png\n"
-            "  %s assets/sample.jpg --remove out/mask.png -o out/clean.png\n",
-            argv0, argv0, argv0, argv0);
+            "  %s assets/sample.jpg --remove out/mask.png -o out/clean.png\n"
+            "  %s assets/sample.jpg -w 400 --method graphcut --seams out/seams.png\n"
+            "  %s assets/sample.jpg -w 400 --compare out/compare\n",
+            argv0, argv0, argv0, argv0, argv0, argv0);
     }
 
     int parse_int(const char* text, const char* what)
@@ -95,6 +103,66 @@ namespace
         }
         seam::save_png(preview, path);
     }
+
+    void save_float(const seam::ImageF& image, const std::string& path)
+    {
+        ensure_parent_directory(path);
+        seam::save_image(seam::to_bytes(image), path);
+    }
+
+    // Runs one resize per method on the same input and reports time, the energy
+    // of the first seam each method picks on the untouched image, and the total
+    // energy of everything it carved.
+    int run_compare(const seam::ImageF& source, const seam::CostOptions& options, int width,
+                    int height, const std::string& directory)
+    {
+        const seam::SeamMethod methods[] = {
+            seam::SeamMethod::DynamicProgramming,
+            seam::SeamMethod::DpBackward,
+            seam::SeamMethod::Greedy,
+            seam::SeamMethod::GraphCut,
+        };
+
+        const seam::ImageF energy = seam::energy_map(source);
+        std::filesystem::create_directories(directory);
+
+        const std::string csv_path = directory + "/summary.csv";
+        std::FILE* csv = std::fopen(csv_path.c_str(), "w");
+        if (csv == nullptr)
+        {
+            std::fprintf(stderr, "error: cannot write %s\n", csv_path.c_str());
+            return 1;
+        }
+        std::fprintf(csv, "method,width,height,seams,time_ms,ms_per_seam,first_seam_energy,"
+                          "total_seam_energy\n");
+
+        std::printf("\n%-12s %8s %10s %10s %14s %16s\n", "method", "seams", "time ms",
+                    "ms/seam", "first seam E", "total seam E");
+        for (const seam::SeamMethod method : methods)
+        {
+            seam::Carver carver(source, options);
+            carver.set_method(method);
+
+            const double first = seam::seam_energy(energy, carver.next_seam());
+            carver.resize_to(width, height);
+
+            const char* name = seam::method_name(method);
+            save_float(carver.image(), directory + "/" + name + ".png");
+            save_float(carver.seam_overlay(), directory + "/" + name + "_seams.png");
+
+            const int seams = carver.seams_carved();
+            const double per_seam = seams > 0 ? carver.last_elapsed_ms() / seams : 0.0;
+            std::printf("%-12s %8d %10.1f %10.3f %14.1f %16.1f\n", name, seams,
+                        carver.last_elapsed_ms(), per_seam, first, carver.total_seam_energy());
+            std::fprintf(csv, "%s,%d,%d,%d,%.3f,%.4f,%.3f,%.3f\n", name, carver.image().width,
+                         carver.image().height, seams, carver.last_elapsed_ms(), per_seam, first,
+                         carver.total_seam_energy());
+        }
+        std::fclose(csv);
+        std::printf("\nwrote %s/{method}.png, {method}_seams.png and summary.csv\n",
+                    directory.c_str());
+        return 0;
+    }
 } // namespace
 
 int main(int argc, char** argv)
@@ -118,6 +186,9 @@ int main(int argc, char** argv)
     int target_width = 0;
     int target_height = 0;
     bool fix_edges = false;
+    seam::SeamMethod method = seam::SeamMethod::DynamicProgramming;
+    std::string seams_path;
+    std::string compare_dir;
 
     for (int i = 2; i < argc; ++i)
     {
@@ -182,6 +253,34 @@ int main(int argc, char** argv)
         {
             fix_edges = true;
         }
+        else if (argument == "--method")
+        {
+            if (!has_value || !seam::parse_method(argv[i + 1], method))
+            {
+                std::fprintf(stderr,
+                             "error: --method expects dp, dp-backward, greedy or graphcut\n");
+                return 2;
+            }
+            ++i;
+        }
+        else if (argument == "--seams")
+        {
+            if (!has_value)
+            {
+                std::fprintf(stderr, "error: --seams needs a path\n");
+                return 2;
+            }
+            seams_path = argv[++i];
+        }
+        else if (argument == "--compare")
+        {
+            if (!has_value)
+            {
+                std::fprintf(stderr, "error: --compare needs a directory\n");
+                return 2;
+            }
+            compare_dir = argv[++i];
+        }
         else
         {
             std::fprintf(stderr, "error: unknown option '%s'\n", argument.c_str());
@@ -203,7 +302,21 @@ int main(int argc, char** argv)
         seam::CostOptions options;
         options.fix_right_edge = fix_edges;
 
+        if (!compare_dir.empty())
+        {
+            if (!protect_mask.empty() || !object_mask.empty())
+            {
+                std::fprintf(stderr, "error: --compare runs plain resizes; drop the masks\n");
+                return 2;
+            }
+            const int width = target_width > 0 ? target_width : loaded.width;
+            const int height = target_height > 0 ? target_height : loaded.height;
+            return run_compare(seam::to_float(loaded), options, width, height, compare_dir);
+        }
+
         seam::Carver carver(seam::to_float(loaded), options);
+        carver.set_method(method);
+        std::printf("method  %s\n", seam::method_name(method));
 
         if (!object_mask.empty())
         {
@@ -230,6 +343,12 @@ int main(int argc, char** argv)
 
         ensure_parent_directory(output);
         seam::save_image(seam::to_bytes(result), output);
+
+        if (!seams_path.empty())
+        {
+            save_float(carver.seam_overlay(), seams_path);
+            std::printf("seams   %s  (%d carved)\n", seams_path.c_str(), carver.seams_carved());
+        }
 
         if (!energy_path.empty())
         {
