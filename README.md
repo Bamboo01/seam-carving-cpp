@@ -3,7 +3,7 @@
 Content-aware image resizing: remove or insert the paths of pixels that matter
 least, instead of scaling the whole image. A C++ port of
 [vivianhylee/seam-carving](https://github.com/vivianhylee/seam-carving), with a
-raylib interface on top.
+raylib interface on top. (This is a school project that encourages responsible use of AI)
 
 Sherwyn Low · Lim Rui Heng · Tea Zhi Xun · Sim Wei Siang · Teo Pek Lin · Loh Jun Wei
 
