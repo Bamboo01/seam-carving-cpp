@@ -49,7 +49,7 @@ Seam find_seam_greedy(const ImageF& energy);
 // cut is the cheapest seam. The seam pixel in each row is the rightmost pixel
 // still reachable from the source in the residual graph.
 //
-// Max-flow uses Dinic's algorithm. Negative energies (object masks) are
+// Max-flow uses Edmonds-Karp. Negative energies (object masks) are
 // shifted up by one constant first, which adds the same amount to every seam
 // and leaves the minimum where it was. The last column can never be cut, so
 // the seam always lies in columns 0 .. width - 2.

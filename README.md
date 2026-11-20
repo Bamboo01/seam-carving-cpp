@@ -99,26 +99,36 @@ bytes ──► float64 ──► energy ──► cumulative cost ──► sea
 
 ## Comparing seam finders
 
-`--compare` resizes with each seam finder and records time and seam energy.
-Sample image, 512x384 to 400x384 (112 vertical seams), g++ -O2 on a 2-core
-Linux VM:
+`--compare` resizes with each seam finder and records time and seam energy
+(g++ -O2 on a 2-core Linux VM).
+
+Full size, 512x384 to 400x384 (112 vertical seams), DP and greedy:
 
 | method | ms / seam | first seam energy | total seam energy |
 |---|---|---|---|
 | dp (forward energy, reference) | 4.5 | 46,458 | 6,663,868 |
 | dp-backward | 3.3 | 46,428 | 6,653,016 |
 | greedy | 2.0 | 134,678 | 11,911,256 |
-| graphcut | 2,490 | 46,428 | 6,653,016 |
+
+Graph cut is too slow for that run (about 4 hours), so it was measured on
+smaller ones, with every method on the same input:
+
+| run | graph cut, ms / seam | dp-backward, ms / seam | graph cut seams |
+|---|---|---|---|
+| 512x384 to 508x384 (4 seams), `out/compare_full4` | 162,939 | 3.7 | identical to dp-backward |
+| 128x96 to 100x96 (28 seams), `out/compare_small` | 469 | 0.12 | identical to dp-backward |
 
 - **Greedy** starts at the cheapest top-row pixel and only looks one row ahead.
-  On the sample every seam starts in the dark left sky and walks straight
-  down, so it eats the bushes on the left. Its seams carry 79% more energy.
+  On the sample every seam starts near the top-left and walks straight down,
+  so it eats the bushes on the left. Its seams carry 79% more energy.
 - **Graph cut** builds one node per pixel, sets the right-edge capacity of
   each pixel to its energy, adds infinite back and diagonal edges so a finite
-  cut is a connected seam, and solves min-cut with Boykov-Kolmogorov max-flow.
-  It returns the same seams as `dp-backward` (the output is pixel-identical),
-  which `tests/test_seam_search.cpp` also checks on 300 random maps, but each
-  seam is a max-flow over ~200k nodes, so it is several hundred times slower.
+  cut is a connected seam, and solves min-cut with Edmonds-Karp max-flow (BFS
+  for a path with spare capacity, push its bottleneck, repeat). It returns the
+  same seams as `dp-backward` (pixel-identical output in both runs above), which
+  `tests/test_seam_search.cpp` also checks on 300 random maps. But every
+  augmenting path is a fresh BFS over ~200k nodes, so a full-size seam takes
+  minutes instead of milliseconds.
 - The forward-energy `dp` minimises a different cost (new edges a removal
   creates), so its seams carry slightly more plain energy by design.
 
